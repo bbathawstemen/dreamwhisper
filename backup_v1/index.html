@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>梦境捕手 - 把昨夜的梦，翻译成今天的诗</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <!-- AOS Animation Library -->
+  <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
+</head>
+<body>
+  <!-- 背景动效 -->
+  <div class="bg-gradient"></div>
+  <div class="bg-orbs">
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <div class="orb orb-3"></div>
+  </div>
+
+  <!-- 主容器 -->
+  <div class="container">
+    <!-- 头部 -->
+    <header class="header">
+      <div class="logo">
+        <span class="logo-icon">🌙</span>
+        <span class="logo-text">梦境捕手</span>
+      </div>
+      <p class="tagline">把昨夜的梦，翻译成今天的诗</p>
+      
+      <!-- 顶部导航 -->
+      <nav class="top-nav">
+        <button class="nav-tab active" data-page="dream">
+          <span class="nav-icon">✨</span>
+          <span class="nav-text">解梦</span>
+        </button>
+        <button class="nav-tab" data-page="social">
+          <span class="nav-icon">🪐</span>
+          <span class="nav-text">同梦星球</span>
+        </button>
+      </nav>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="main-content">
+      <!-- 解梦页面 -->
+      <div class="page page-dream active" id="pageDream">
+      <!-- 记录梦境卡片 -->
+      <section class="card dream-input-card" data-aos="fade-up" data-aos-duration="600">
+        <h2 class="card-title">
+          <span class="title-icon">✨</span>
+          记录你的梦境
+        </h2>
+        <p class="card-subtitle">闭上眼，回忆梦中的画面，用文字捕捉那些转瞬即逝的片段...</p>
+        
+        <div class="input-group">
+          <textarea 
+            id="dreamInput" 
+            class="dream-textarea" 
+            placeholder="昨晚我梦见了..."
+            rows="6"
+          ></textarea>
+          <div class="textarea-glow"></div>
+        </div>
+
+        <!-- 境况引导 -->
+        <div class="situation-section">
+          <label class="situation-label">
+            <span class="label-icon">💭</span>
+            了解你的近期状态
+          </label>
+          <p class="situation-hint">以下问题帮助 AI 更准确地分析你的潜意识（选填）</p>
+          
+          <div class="situation-questions">
+            <div class="question-item">
+              <label class="question-label">最近有什么困扰或压力？</label>
+              <textarea 
+                id="situationStress" 
+                class="question-input" 
+                placeholder="工作、学业、人际关系、经济等方面..."
+                rows="2"
+              ></textarea>
+            </div>
+            
+            <div class="question-item">
+              <label class="question-label">最近有什么重要的事或决定？</label>
+              <textarea 
+                id="situationEvent" 
+                class="question-input" 
+                placeholder="正在面临的选择、发生的变化..."
+                rows="2"
+              ></textarea>
+            </div>
+            
+            <div class="question-item">
+              <label class="question-label">最近的情感状态如何？</label>
+              <textarea 
+                id="situationEmotion" 
+                class="question-input" 
+                placeholder="和家人、朋友、伴侣的关系，内心的感受..."
+                rows="2"
+              ></textarea>
+            </div>
+          </div>
+        </div>
+
+        <!-- 情绪标签 -->
+        <div class="emotion-tags">
+          <span class="emotion-label">梦境情绪：</span>
+          <div class="tags-wrap">
+            <button class="tag" data-emotion="peaceful">🌊 平静</button>
+            <button class="tag" data-emotion="happy">✨ 愉悦</button>
+            <button class="tag" data-emotion="anxious">🌀 焦虑</button>
+            <button class="tag" data-emotion="fearful">🌑 恐惧</button>
+            <button class="tag" data-emotion="confused">🌫️ 迷茫</button>
+            <button class="tag" data-emotion="nostalgic">🍂 怀旧</button>
+          </div>
+        </div>
+
+        <!-- 解析模式选择 -->
+        <div class="mode-selector">
+          <span class="mode-label">解析风格：</span>
+          <div class="mode-options">
+            <label class="mode-option">
+              <input type="radio" name="mode" value="psychological" checked>
+              <span class="mode-card">
+                <span class="mode-icon">🧠</span>
+                <span class="mode-name">心理探索</span>
+                <span class="mode-desc">荣格式深度解析</span>
+              </span>
+            </label>
+            <label class="mode-option">
+              <input type="radio" name="mode" value="mystical">
+              <span class="mode-card">
+                <span class="mode-icon">🔮</span>
+                <span class="mode-name">玄学趣味</span>
+                <span class="mode-desc">星座塔罗风格</span>
+              </span>
+            </label>
+          </div>
+        </div>
+
+        <button id="interpretBtn" class="interpret-btn">
+          <span class="btn-text">开始解梦</span>
+          <span class="btn-icon">→</span>
+        </button>
+      </section>
+
+      <!-- 解析结果 - 梦境卷轴 -->
+      <section class="dream-scroll-container" id="resultCard" data-aos="fade-up" data-aos-duration="600" style="display: none;">
+        <!-- 卷轴卡片 -->
+        <div class="dream-scroll">
+          <!-- 顶部装饰 -->
+          <div class="scroll-header">
+            <div class="scroll-ornament">✦ ✦ ✦</div>
+            <div class="scroll-title">
+              <span class="scroll-icon">🌙</span>
+              <span>梦境解析</span>
+            </div>
+            <div class="scroll-subtitle">来自潜意识的密语</div>
+          </div>
+          
+          <!-- 内容区 -->
+          <div class="scroll-content" id="scrollContent">
+            <!-- 动态生成的内容 -->
+          </div>
+          
+          <!-- 底部装饰 -->
+          <div class="scroll-footer">
+            <div class="scroll-ornament">✦</div>
+          </div>
+        </div>
+        
+        <!-- 我的感悟 -->
+        <div class="reflection-section">
+          <label class="reflection-label">
+            <span class="label-icon">✍️</span>
+            我的感悟
+          </label>
+          <p class="reflection-hint">读完解析后，写下你的想法和感受</p>
+          <textarea 
+            id="reflectionInput" 
+            class="reflection-textarea" 
+            placeholder="这个解析让我意识到...&#10;我觉得梦里的XX可能代表...&#10;我现在的感受是..."
+            rows="4"
+          ></textarea>
+        </div>
+        
+        <!-- 操作按钮 -->
+        <div class="result-actions">
+          <button class="action-btn save-btn" id="saveBtn">
+            <span>💾</span> 保存到梦境日记
+          </button>
+          <button class="action-btn share-btn" id="shareBtn">
+            <span>🎨</span> 生成分享卡片
+          </button>
+        </div>
+      </section>
+
+      <!-- 梦境历史 -->
+      <section class="card history-card" data-aos="fade-up" data-aos-duration="600" data-aos-delay="100">
+        <h2 class="card-title">
+          <span class="title-icon">📖</span>
+          梦境日记
+          <span class="history-count" id="historyCount">0</span>
+        </h2>
+        
+        <div class="history-list" id="historyList">
+          <div class="empty-state">
+            <span class="empty-icon">🌙</span>
+            <p>还没有记录梦境</p>
+            <p class="empty-hint">开始记录你的第一个梦吧</p>
+          </div>
+        </div>
+      </section>
+      </div>
+
+      <!-- 同梦星球页面 -->
+      <div class="page page-social" id="pageSocial">
+        <!-- 关键词筛选卡片 -->
+        <section class="card" data-aos="fade-up" data-aos-duration="600">
+          <h2 class="card-title">
+            <span class="title-icon">🪐</span>
+            同梦星球
+            <span class="online-badge">
+              <span class="online-dot"></span>
+              <span id="planetOnlineCount">156人在线</span>
+            </span>
+          </h2>
+          <p class="card-subtitle">找到和你做过相似梦的人，探索梦境的共鸣</p>
+          
+          <div class="keyword-filter">
+            <div class="keyword-cloud" id="keywordCloud">
+              <button class="keyword-btn active" data-keyword="all">🌌 全部</button>
+              <button class="keyword-btn" data-keyword="flying">🕊️ 飞翔</button>
+              <button class="keyword-btn" data-keyword="falling">⬇️ 坠落</button>
+              <button class="keyword-btn" data-keyword="chasing">🏃 追逐</button>
+              <button class="keyword-btn" data-keyword="reunion">👥 重逢</button>
+              <button class="keyword-btn" data-keyword="water">🌊 水</button>
+              <button class="keyword-btn" data-keyword="lost">🌀 迷路</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- 同梦者列表 -->
+        <section class="card" data-aos="fade-up" data-aos-duration="600" data-aos-delay="100">
+          <h2 class="card-title">
+            <span class="title-icon">✨</span>
+            同梦者
+          </h2>
+          <div class="dreamers-scroll" id="dreamersScroll">
+            <!-- 动态生成 -->
+          </div>
+        </section>
+
+        <!-- 梦境漂流瓶 -->
+        <section class="card" data-aos="fade-up" data-aos-duration="600" data-aos-delay="200">
+          <h2 class="card-title">
+            <span class="title-icon">💫</span>
+            梦境漂流瓶
+          </h2>
+          <div class="feed-list" id="feedList">
+            <!-- 动态生成 -->
+          </div>
+          <button class="load-more" id="loadMoreFeed">探索更多梦境...</button>
+        </section>
+
+        <!-- 梦境灵感 -->
+        <section class="card" data-aos="fade-up" data-aos-duration="600" data-aos-delay="300">
+          <h2 class="card-title">
+            <span class="title-icon">📖</span>
+            梦境灵感
+          </h2>
+          <div class="theme-interpretation" id="themeInterpretation">
+            <!-- 动态生成 -->
+          </div>
+        </section>
+
+        <!-- 发布入口 -->
+        <div class="share-float" data-aos="fade-up" data-aos-duration="600" data-aos-delay="400">
+          <button class="share-dream-btn" id="shareDreamBtn">
+            <span class="share-icon">🌟</span>
+            <span>投放漂流瓶</span>
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- 底部 -->
+    <footer class="footer">
+      <p>「你的潜意识，正在梦里写日记」</p>
+    </footer>
+  </div>
+
+  <!-- 加载动画 -->
+  <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+    <div class="loading-content">
+      <div class="loading-orb"></div>
+      <p class="loading-text">正在解读你的梦境...</p>
+      <p class="loading-hint">潜意识的密语正在翻译中</p>
+    </div>
+  </div>
+
+  <!-- 分享卡片模态框 -->
+  <div class="modal" id="shareModal" style="display: none;">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content share-card-preview">
+      <div class="share-card" id="shareCard">
+        <div class="share-card-bg"></div>
+        <div class="share-card-content">
+          <div class="share-card-header">
+            <span class="share-logo">🌙 梦境捕手</span>
+            <span class="share-date" id="shareDate"></span>
+          </div>
+          <div class="share-dream" id="shareDream"></div>
+          <div class="share-interpretation" id="shareInterpretation"></div>
+          <div class="share-footer">
+            <span class="share-tagline">把昨夜的梦，翻译成今天的诗</span>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn" id="copyCardBtn">复制文案</button>
+        <button class="modal-btn close-btn" id="closeModalBtn">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
