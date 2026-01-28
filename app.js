@@ -1,10 +1,38 @@
 // Dreamwhisper - 主应用逻辑
 
-const DEEPSEEK_API_URL = 'https://api.deepseek.com/chat/completions';
-const API_KEY = 'sk-c88c7f0df6294d85ba3908778c06f00f';
+// API 配置
+const API_CONFIG = {
+  deepseek: {
+    url: 'https://api.deepseek.com/chat/completions',
+    defaultKey: 'sk-c88c7f0df6294d85ba3908778c06f00f',
+    keyLink: 'https://platform.deepseek.com/api_keys',
+    hint: '💡 deepseek-chat 是性价比最高的选择'
+  },
+  openai: {
+    url: 'https://api.openai.com/v1/chat/completions',
+    defaultKey: '',
+    keyLink: 'https://platform.openai.com/api-keys',
+    hint: '💡 GPT-5.2 最新最强，GPT-4o-mini 便宜好用'
+  },
+  gemini: {
+    url: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent',
+    defaultKey: '',
+    keyLink: 'https://aistudio.google.com/app/apikey',
+    hint: '💡 Gemini 3 Flash 推荐，快速强大'
+  }
+};
 
 // 本地存储键名
 const STORAGE_KEY = 'dream_diary';
+const SETTINGS_KEY = 'dream_ai_settings';
+
+// AI 设置
+let aiSettings = {
+  provider: 'deepseek',
+  model: 'deepseek-chat',
+  apiKey: '',
+  baseUrl: ''
+};
 
 // 当前状态
 let currentEmotion = '';
@@ -38,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     offset: 50
   });
   
+  loadAISettings();
   initNavigation();
   initEmotionTags();
   initModeSelector();
@@ -45,12 +74,13 @@ document.addEventListener('DOMContentLoaded', () => {
   initInterpretBtn();
   initSaveBtn();
   initShareBtn();
+  initSettingsModal();
   loadHistory();
 });
 
 // 顶部导航初始化
 function initNavigation() {
-  const navTabs = document.querySelectorAll('.nav-tab');
+  const navTabs = document.querySelectorAll('.nav-tab:not(.settings-tab)');
   const pages = document.querySelectorAll('.page');
   
   navTabs.forEach(tab => {
@@ -257,39 +287,109 @@ ${currentMBTI}（${mbtiDesc}）
 请用富有诗意和温度的语言进行解析，分段输出，每段2-3句话。重点分析潜意识在表达什么。`;
 
   try {
-    const response = await fetch(DEEPSEEK_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${API_KEY}`
-      },
-      body: JSON.stringify({
-        model: 'deepseek-chat',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userPrompt }
-        ],
-        temperature: 0.85,
-        max_tokens: 800
-      })
-    });
-
-    if (!response.ok) {
-      throw new Error('API 请求失败');
-    }
-
-    const data = await response.json();
-    const interpretation = data.choices[0].message.content.trim();
-    
+    const interpretation = await callAI(systemPrompt, userPrompt);
     currentInterpretation = interpretation;
     displayResult(interpretation);
-    
   } catch (error) {
     console.error('解梦失败:', error);
-    showToast('解析失败，请稍后重试');
+    showToast(error.message || '解析失败，请稍后重试');
   } finally {
     showLoading(false);
   }
+}
+
+// 统一 AI 调用函数
+async function callAI(systemPrompt, userPrompt) {
+  const { provider, model, apiKey, baseUrl } = aiSettings;
+  const config = API_CONFIG[provider];
+  const finalApiKey = apiKey || config.defaultKey;
+  
+  if (!finalApiKey) {
+    throw new Error(`请先在设置中配置 ${provider.toUpperCase()} 的 API Key`);
+  }
+  
+  if (provider === 'gemini') {
+    return await callGeminiAPI(model, systemPrompt, userPrompt, finalApiKey, baseUrl);
+  } else {
+    return await callOpenAICompatibleAPI(provider, model, systemPrompt, userPrompt, finalApiKey, baseUrl);
+  }
+}
+
+// OpenAI 兼容接口调用 (DeepSeek, OpenAI)
+async function callOpenAICompatibleAPI(provider, model, systemPrompt, userPrompt, apiKey, baseUrl) {
+  const config = API_CONFIG[provider];
+  
+  // 使用自定义地址或默认地址
+  let apiUrl = config.url;
+  if (baseUrl) {
+    // 移除末尾斜杠，拼接路径
+    apiUrl = baseUrl.replace(/\/+$/, '') + '/v1/chat/completions';
+  }
+  
+  const response = await fetch(apiUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.85,
+      max_tokens: 800
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `API 请求失败 (${response.status})`);
+  }
+
+  const data = await response.json();
+  return data.choices[0].message.content.trim();
+}
+
+// Gemini API 调用
+async function callGeminiAPI(model, systemPrompt, userPrompt, apiKey, baseUrl) {
+  let url;
+  if (baseUrl) {
+    // 使用中转地址，移除末尾斜杠和可能的 /v1 路径
+    const cleanBase = baseUrl.replace(/\/+$/, '').replace(/\/v1$/, '');
+    url = cleanBase + `/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  } else {
+    url = API_CONFIG.gemini.url.replace('{model}', model) + `?key=${apiKey}`;
+  }
+  
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      contents: [
+        {
+          parts: [
+            { text: systemPrompt + '\n\n' + userPrompt }
+          ]
+        }
+      ],
+      generationConfig: {
+        temperature: 0.85,
+        maxOutputTokens: 800
+      }
+    })
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.error?.message || `Gemini API 请求失败 (${response.status})`);
+  }
+
+  const data = await response.json();
+  return data.candidates[0].content.parts[0].text.trim();
 }
 
 // 获取系统提示词
@@ -306,43 +406,54 @@ function getSystemPrompt(mode, mbti, mbtiDesc) {
   }
 
   if (mode === 'psychological') {
-    return `你是一位温柔而富有洞察力的心理分析师，专注于荣格式梦境解析。你的核心任务是帮助做梦者通过梦境更好地了解自己的内心。
+    return `你是一位对弗洛伊德梦的解析理论了解非常深的梦境解析师 AI。
 ${mbtiContext}
 你的解读风格：
-1. 将梦境视为潜意识与意识的对话桥梁
-2. 关注梦中的原型意象（阴影、阿尼玛/阿尼姆斯、智慧老人等）
-3. 如果做梦者提供了现实境况，深入分析梦境与现实的关联
+1. 基于弗洛伊德理论，分析梦境中的场景、人物、情绪、符号及其特殊意义
+2. 关注梦境中重复出现的元素，挖掘其潜意识含义
+3. 分析梦境过程和清醒后的情绪体验之间的关联
 4. 如果做梦者提供了 MBTI 人格，结合其人格特点进行个性化解读
-5. 揭示做梦者可能没有意识到的内心想法、压抑的情绪、未被满足的需求
-6. 用诗意、温暖的语言，像一位智慧的朋友
+5. 揭示梦境背后隐藏的欲望、压抑的情感和未解决的冲突
+6. 用专业但易懂的语言，像一位经验丰富的心理分析师
 7. 每段以换行分隔，便于阅读
 
-重要：在解析的最后，以「🌙 梦的引导」为标题，提出2-3个引导性的反思问题，帮助做梦者进一步探索内心，例如：
-- "梦中的XX是否让你联想到现实中的某个人或某件事？"
-- "当你想到XX时，内心最真实的感受是什么？"
-- "如果梦中的你可以做出不同的选择，你会怎么做？"
+重要：在解析的最后，以「🌙 梦的引导」为标题，通过提问引导做梦者自由联想和补充信息：
+- 引导客户联想梦中符号与现实生活的关联
+- 询问是否有相关的困扰或疑问
+- 如果发现缺失关键细节，简短提问引导客户分享更多信息
+- 提出2-3个引导性的反思问题，帮助做梦者进一步探索内心
 
 回复控制在300-400字。
 
-记住：你的目标是帮助做梦者更深入地了解自己。`;
+记住：你的目标是通过弗洛伊德式的分析，帮助做梦者理解潜意识中的真实想法。`;
   } else {
-    return `你是一位神秘而亲切的占卜师，擅长将梦境与星象、塔罗、东方玄学结合解读。
+    return `你是一位精通传统解梦理论的资深文化学者，专注于《周公解梦》等传统解梦体系的研究与实践，拥有20年的解梦经验，擅长从传统文化角度解析梦境象征意义。
 ${mbtiContext}
-你的风格：
-1. 融合星座、塔罗牌、周公解梦等元素
-2. 如果做梦者提供了现实境况，结合境况给出针对性的指引
-3. 如果做梦者提供了 MBTI 人格，可以结合人格特点给出更契合的神秘学解读
-4. 语言神秘但不故弄玄虚，有趣味性
-5. 给出一些轻松的运势提示或建议
-6. 偶尔使用一些占卜术语增加氛围感
-7. 保持温暖和正面引导，避免恐吓式解读
-8. 每段以换行分隔
+你的专业背景：
+- 精通《周公解梦》《穷通宝鉴》《滴天髓》《易经》《奇门遁甲》《三命通会》《子平真诠》《渊海子平》等传统典籍
+- 熟悉中国传统文化中的象征体系
+- 了解阴阳五行在解梦中的应用
+- 掌握传统解梦的实践技巧和方法
 
-重要：在解析的最后，以「🌙 梦的引导」为标题，提出1-2个启发性的问题，引导做梦者思考梦境与自己的关联。
+你的解读风格：
+1. 基于中国传统文化和解梦理论进行分析
+2. 解释梦境元素在传统文化中的象征意义
+3. 运用阴阳五行理论辅助解读
+4. 如果做梦者提供了现实境况，结合境况给出针对性的指引
+5. 如果做梦者提供了 MBTI 人格，可以结合人格特点给出更契合的解读
+6. 语言通俗易懂，避免过于玄奥，但保持传统文化的原汁原味
+7. 避免绝对化的解释，强调参考性质
+8. 保持温暖和正面引导，不提供医疗或心理诊断建议
+9. 每段以换行分隔
+
+重要：在解析的最后，以「🌙 梦的引导」为标题：
+- 提供常见梦境元素的传统象征意义参考
+- 给出实用可操作的建议
+- 提出1-2个启发性的问题，引导做梦者思考梦境与自己的关联
 
 回复控制在300-400字。
 
-记住：你是在给做梦者一份来自神秘世界的温柔指引，同时帮助他们更了解自己。`;
+记住：你是在用传统文化的智慧为做梦者提供参考和指引，帮助他们从传统视角理解梦境。`;
   }
 }
 
@@ -574,6 +685,199 @@ document.head.appendChild(toastStyle);
 // 将 deleteDream 暴露到全局
 window.deleteDream = deleteDream;
 
+// 打开设置弹窗（全局函数）
+function openSettingsModal() {
+  const settingsModal = document.getElementById('settingsModal');
+  const providerRadios = document.querySelectorAll('input[name="provider"]');
+  const modelSelect = document.getElementById('modelSelect');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const baseUrlInput = document.getElementById('baseUrlInput');
+  
+  if (!settingsModal) return;
+  
+  // 恢复已保存的设置到 UI
+  providerRadios.forEach(radio => {
+    radio.checked = radio.value === aiSettings.provider;
+  });
+  
+  // 更新模型选项显示
+  const deepseekGroup = document.getElementById('deepseekModels');
+  const openaiGroup = document.getElementById('openaiModels');
+  const geminiGroup = document.getElementById('geminiModels');
+  [deepseekGroup, openaiGroup, geminiGroup].forEach(g => {
+    if (g) g.style.display = 'none';
+  });
+  if (aiSettings.provider === 'deepseek' && deepseekGroup) deepseekGroup.style.display = '';
+  if (aiSettings.provider === 'openai' && openaiGroup) openaiGroup.style.display = '';
+  if (aiSettings.provider === 'gemini' && geminiGroup) geminiGroup.style.display = '';
+  
+  modelSelect.value = aiSettings.model;
+  apiKeyInput.value = aiSettings.apiKey;
+  baseUrlInput.value = aiSettings.baseUrl || '';
+  
+  // 更新提示链接
+  const apiKeyLink = document.getElementById('apiKeyLink');
+  const modelHint = document.getElementById('modelHint');
+  const config = API_CONFIG[aiSettings.provider];
+  if (apiKeyLink) {
+    apiKeyLink.href = config.keyLink;
+    apiKeyLink.textContent = aiSettings.provider === 'deepseek' ? 'DeepSeek 控制台' :
+                             aiSettings.provider === 'openai' ? 'OpenAI 控制台' : 'Google AI Studio';
+  }
+  if (modelHint) modelHint.textContent = config.hint;
+  if (apiKeyInput) {
+    apiKeyInput.placeholder = aiSettings.provider === 'deepseek' ? '可选，留空使用默认服务' :
+                              `请输入你的 ${aiSettings.provider.toUpperCase()} API Key`;
+  }
+  
+  settingsModal.style.display = 'flex';
+}
+window.openSettingsModal = openSettingsModal;
+
+// ========== AI 设置模块 ==========
+
+// 加载 AI 设置
+function loadAISettings() {
+  try {
+    const saved = localStorage.getItem(SETTINGS_KEY);
+    if (saved) {
+      aiSettings = JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('加载 AI 设置失败:', e);
+  }
+}
+
+// 保存 AI 设置
+function saveAISettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(aiSettings));
+  } catch (e) {
+    console.error('保存 AI 设置失败:', e);
+  }
+}
+
+// 初始化设置弹窗
+function initSettingsModal() {
+  const settingsModal = document.getElementById('settingsModal');
+  const closeSettingsBtn = document.getElementById('closeSettingsBtn');
+  const saveSettingsBtn = document.getElementById('saveSettingsBtn');
+  const providerRadios = document.querySelectorAll('input[name="provider"]');
+  const modelSelect = document.getElementById('modelSelect');
+  const apiKeyInput = document.getElementById('apiKeyInput');
+  const toggleKeyBtn = document.getElementById('toggleKeyBtn');
+  const apiKeyLink = document.getElementById('apiKeyLink');
+  const apiKeyHint = document.getElementById('apiKeyHint');
+  const modelHint = document.getElementById('modelHint');
+  
+  if (!settingsModal) {
+    console.error('Settings modal not found');
+    return;
+  }
+  
+  // 关闭设置
+  closeSettingsBtn.addEventListener('click', () => {
+    settingsModal.style.display = 'none';
+  });
+  
+  settingsModal.querySelector('.modal-backdrop').addEventListener('click', () => {
+    settingsModal.style.display = 'none';
+  });
+  
+  // 切换服务商
+  providerRadios.forEach(radio => {
+    radio.addEventListener('change', () => {
+      const provider = radio.value;
+      updateModelOptions(provider);
+      updateProviderUI(provider);
+    });
+  });
+  
+  // 切换密码可见性
+  toggleKeyBtn.addEventListener('click', () => {
+    if (apiKeyInput.type === 'password') {
+      apiKeyInput.type = 'text';
+      toggleKeyBtn.textContent = '🙈';
+    } else {
+      apiKeyInput.type = 'password';
+      toggleKeyBtn.textContent = '👁️';
+    }
+  });
+  
+  // 保存设置
+  saveSettingsBtn.addEventListener('click', () => {
+    const selectedProvider = document.querySelector('input[name="provider"]:checked').value;
+    const selectedModel = modelSelect.value;
+    const inputApiKey = apiKeyInput.value.trim();
+    const inputBaseUrl = document.getElementById('baseUrlInput').value.trim();
+    
+    // 验证：非 DeepSeek 必须填写 API Key
+    if (selectedProvider !== 'deepseek' && !inputApiKey) {
+      showToast(`请输入 ${selectedProvider.toUpperCase()} 的 API Key`);
+      apiKeyInput.focus();
+      return;
+    }
+    
+    aiSettings.provider = selectedProvider;
+    aiSettings.model = selectedModel;
+    aiSettings.apiKey = inputApiKey;
+    aiSettings.baseUrl = inputBaseUrl;
+    
+    saveAISettings();
+    settingsModal.style.display = 'none';
+    showToast('AI 设置已保存 ✨');
+  });
+  
+  // 更新模型选项
+  function updateModelOptions(provider) {
+    const deepseekGroup = document.getElementById('deepseekModels');
+    const openaiGroup = document.getElementById('openaiModels');
+    const geminiGroup = document.getElementById('geminiModels');
+    
+    // 隐藏所有
+    [deepseekGroup, openaiGroup, geminiGroup].forEach(g => {
+      if (g) g.style.display = 'none';
+    });
+    
+    // 显示选中的
+    let targetGroup;
+    let defaultModel;
+    if (provider === 'deepseek') {
+      targetGroup = deepseekGroup;
+      defaultModel = 'deepseek-chat';
+    } else if (provider === 'openai') {
+      targetGroup = openaiGroup;
+      defaultModel = 'gpt-5.2';
+    } else if (provider === 'gemini') {
+      targetGroup = geminiGroup;
+      defaultModel = 'gemini-3-flash-preview';
+    }
+    
+    if (targetGroup) {
+      targetGroup.style.display = '';
+      modelSelect.value = defaultModel;
+    }
+  }
+  
+  // 更新服务商相关 UI
+  function updateProviderUI(provider) {
+    const config = API_CONFIG[provider];
+    
+    // 更新获取链接
+    apiKeyLink.href = config.keyLink;
+    apiKeyLink.textContent = provider === 'deepseek' ? 'DeepSeek 控制台' :
+                             provider === 'openai' ? 'OpenAI 控制台' :
+                             'Google AI Studio';
+    
+    // 更新提示
+    modelHint.textContent = config.hint;
+    
+    // 更新占位符
+    apiKeyInput.placeholder = provider === 'deepseek' ? '可选，留空使用默认服务' :
+                              `请输入你的 ${provider.toUpperCase()} API Key`;
+  }
+}
+
 // ========== 梦境灵感 - 自我探索模块 ==========
 
 // 梦境主题数据
@@ -618,14 +922,14 @@ const DREAM_THEMES = {
       '最近有什么情绪你一直没有表达出来？'
     ]
   },
-  deceased: {
-    title: '👤 故人',
-    meaning: '梦见已故的人通常反映了我们对他们的思念，或者他们在我们生命中的重要意义。这类梦也可能是潜意识在处理未完成的情感。',
+  reunion: {
+    title: '👥 重逢',
+    meaning: '梦见已故的人或久别重逢通常反映了我们对他们的思念，或者他们在我们生命中的重要意义。这类梦也可能是潜意识在处理未完成的情感。',
     psychology: '故人在梦中说的话或做的事可能代表你内心的声音。这类梦有时是在帮助我们完成告别，有时是在提醒我们他们留给我们的人生智慧。',
     questions: [
-      '梦中的故人对你说了什么？做了什么？',
+      '梦中的人对你说了什么？做了什么？',
       '你和这个人之间有没有未完成的心愿或未说出的话？',
-      '这个人生前给你最重要的影响是什么？'
+      '这个人给你最重要的影响是什么？'
     ]
   },
   lost: {
@@ -660,66 +964,58 @@ const DREAM_THEMES = {
   }
 };
 
-// 梦境象征词典
-const DREAM_SYMBOLS = [
-  { symbol: '🏠 房子', meaning: '代表自我、内心世界。不同房间代表人格的不同层面。' },
-  { symbol: '🚗 车', meaning: '代表人生旅程、对生活的掌控力。驾驶状态反映你的自主感。' },
-  { symbol: '🐍 蛇', meaning: '可能代表恐惧、智慧、转变或隐藏的威胁，取决于你的感受。' },
-  { symbol: '👶 婴儿', meaning: '代表新的开始、内心的纯真部分，或需要呵护的新想法。' },
-  { symbol: '🪞 镜子', meaning: '代表自我认知、自我反省。镜中的形象反映你对自己的看法。' },
-  { symbol: '🚪 门', meaning: '代表机会、新的可能性或过渡。关闭的门可能表示错过或阻碍。' },
-  { symbol: '🌳 树', meaning: '代表生命力、成长和根基。树的状态反映你的生命状态。' },
-  { symbol: '🔥 火', meaning: '代表激情、愤怒、转化或破坏。火的大小反映情感的强度。' }
-];
-
 // 梦境符号头像
-const DREAM_AVATARS = ['🕊️', '🌙', '🔑', '🦋', '🌊', '⭐', '🌸', '🍃', '🔮', '💫', '🌈', '🦢'];
+const DREAM_AVATARS = ['🕊️', '🌙', '🔑', '🦋', '🌊', '⭐', '🌸', '🍃', '🔮', '💫', '🌈', '🦢', '🐚', '🎐', '🪷', '🌺'];
 
-// 同梦者数据（模拟）
-const DREAMERS_DATA = [
-  { avatar: '🕊️', keyword: '飞翔', time: '刚刚', type: 'flying' },
-  { avatar: '⬇️', keyword: '坠落', time: '3分钟前', type: 'falling' },
-  { avatar: '🏃', keyword: '追逐', time: '5分钟前', type: 'chasing' },
-  { avatar: '👥', keyword: '重逢', time: '8分钟前', type: 'reunion' },
-  { avatar: '🌊', keyword: '水', time: '12分钟前', type: 'water' },
-  { avatar: '🌀', keyword: '迷路', time: '15分钟前', type: 'lost' },
-  { avatar: '🦋', keyword: '飞翔', time: '20分钟前', type: 'flying' },
-  { avatar: '💧', keyword: '水', time: '25分钟前', type: 'water' },
+// 匿名昵称库
+const ANONYMOUS_NAMES = [
+  '星河漫步者', '月光收集者', '云端旅人', '深海潜行者', '时光漫步者',
+  '梦境守护者', '黎明追寻者', '晚风倾听者', '极光观测者', '雨滴记录者',
+  '落叶收藏家', '萤火追随者', '彩虹绘制者', '迷雾行者', '晨露拾遗者'
 ];
 
-// 漂流瓶数据（模拟）
-const FEED_DATA = [
+// 本地存储键名
+const PLANET_FEED_KEY = 'dream_planet_feed';
+const PLANET_RESONANCE_KEY = 'dream_planet_resonance';
+const PLANET_COMMENTS_KEY = 'dream_planet_comments';
+
+// 默认漂流瓶数据
+const DEFAULT_FEED_DATA = [
   {
+    id: 'default_1',
     avatar: '🦋',
     name: '匿名梦旅人',
-    time: '10分钟前',
+    time: new Date(Date.now() - 10 * 60 * 1000).toISOString(),
     content: '梦见自己在云端飞翔，俯瞰整座城市，感觉特别自由。醒来后心情很好，但也有点怅然若失...',
     tags: ['飞翔', '自由', '城市'],
     type: 'flying',
     resonance: 24
   },
   {
+    id: 'default_2',
     avatar: '🌊',
     name: '深海潜行者',
-    time: '30分钟前',
+    time: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
     content: '又梦见那片蔚蓝的海了，我在水下呼吸，看到五彩斑斓的珊瑚。奇怪的是完全不害怕，反而很平静。',
     tags: ['水', '海洋', '平静'],
     type: 'water',
     resonance: 18
   },
   {
+    id: 'default_3',
     avatar: '👥',
     name: '时光漫步者',
-    time: '1小时前',
+    time: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
     content: '梦见了去世多年的外婆，她还是记忆中的样子，笑着给我做饭。醒来枕头湿了一片。',
     tags: ['重逢', '故人', '思念'],
     type: 'reunion',
     resonance: 56
   },
   {
+    id: 'default_4',
     avatar: '🏃',
     name: '迷雾行者',
-    time: '2小时前',
+    time: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     content: '被什么东西追着跑，怎么也跑不快，腿像灌了铅。最后躲进一个房间才醒过来，心跳好快。',
     tags: ['追逐', '恐惧', '逃跑'],
     type: 'chasing',
@@ -727,7 +1023,210 @@ const FEED_DATA = [
   }
 ];
 
+// 默认评论数据
+const DEFAULT_COMMENTS_DATA = {
+  'default_1': [
+    {
+      id: 'comment_default_1_1',
+      avatar: '🌸',
+      name: '云端旅人',
+      time: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      text: '我也经常梦见飞翔！每次醒来都特别不舍得'
+    },
+    {
+      id: 'comment_default_1_2',
+      avatar: '💫',
+      name: '星河漫步者',
+      time: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
+      text: '飞翔的梦据说代表内心渴望自由，最近是不是压力比较大？'
+    }
+  ],
+  'default_2': [
+    {
+      id: 'comment_default_2_1',
+      avatar: '🦋',
+      name: '晚风倾听者',
+      time: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+      text: '水下呼吸的梦好神奇，感觉很治愈'
+    }
+  ],
+  'default_3': [
+    {
+      id: 'comment_default_3_1',
+      avatar: '🌙',
+      name: '梦境守护者',
+      time: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+      text: '看哭了...我也经常梦见已故的亲人'
+    },
+    {
+      id: 'comment_default_3_2',
+      avatar: '🔮',
+      name: '黎明追寻者',
+      time: new Date(Date.now() - 50 * 60 * 1000).toISOString(),
+      text: '这种梦是潜意识在帮我们完成告别，很珍贵的'
+    },
+    {
+      id: 'comment_default_3_3',
+      avatar: '⭐',
+      name: '萤火追随者',
+      time: new Date(Date.now() - 55 * 60 * 1000).toISOString(),
+      text: '外婆做的饭，是记忆里最温暖的味道'
+    }
+  ],
+  'default_4': [
+    {
+      id: 'comment_default_4_1',
+      avatar: '🌊',
+      name: '极光观测者',
+      time: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+      text: '被追的梦太真实了，腿真的像灌了铅一样跑不动'
+    }
+  ]
+};
+
+// 当前状态
 let currentKeyword = 'all';
+let currentCommentFeedId = null;
+
+// 获取漂流瓶数据
+function getFeedData() {
+  try {
+    const saved = localStorage.getItem(PLANET_FEED_KEY);
+    if (saved) {
+      const data = JSON.parse(saved);
+      return data.length > 0 ? data : DEFAULT_FEED_DATA;
+    }
+    return DEFAULT_FEED_DATA;
+  } catch {
+    return DEFAULT_FEED_DATA;
+  }
+}
+
+// 保存漂流瓶数据
+function saveFeedData(data) {
+  try {
+    localStorage.setItem(PLANET_FEED_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('保存漂流瓶失败:', e);
+  }
+}
+
+// 获取共鸣状态
+function getResonanceState() {
+  try {
+    const saved = localStorage.getItem(PLANET_RESONANCE_KEY);
+    return saved ? JSON.parse(saved) : {};
+  } catch {
+    return {};
+  }
+}
+
+// 保存共鸣状态
+function saveResonanceState(state) {
+  try {
+    localStorage.setItem(PLANET_RESONANCE_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error('保存共鸣状态失败:', e);
+  }
+}
+
+// 获取评论数据（合并默认评论和用户评论）
+function getCommentsData() {
+  try {
+    const saved = localStorage.getItem(PLANET_COMMENTS_KEY);
+    const userComments = saved ? JSON.parse(saved) : {};
+    
+    // 合并默认评论和用户评论
+    const merged = {};
+    
+    // 先添加默认评论
+    for (const feedId in DEFAULT_COMMENTS_DATA) {
+      merged[feedId] = [...DEFAULT_COMMENTS_DATA[feedId]];
+    }
+    
+    // 再添加用户评论（追加到默认评论后面）
+    for (const feedId in userComments) {
+      if (merged[feedId]) {
+        merged[feedId] = merged[feedId].concat(userComments[feedId]);
+      } else {
+        merged[feedId] = userComments[feedId];
+      }
+    }
+    
+    return merged;
+  } catch {
+    return { ...DEFAULT_COMMENTS_DATA };
+  }
+}
+
+// 保存评论数据
+function saveCommentsData(data) {
+  try {
+    localStorage.setItem(PLANET_COMMENTS_KEY, JSON.stringify(data));
+  } catch (e) {
+    console.error('保存评论失败:', e);
+  }
+}
+
+// 生成唯一ID
+function generateId() {
+  return 'feed_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
+// 获取随机头像
+function getRandomAvatar() {
+  return DREAM_AVATARS[Math.floor(Math.random() * DREAM_AVATARS.length)];
+}
+
+// 获取随机昵称
+function getRandomName() {
+  return ANONYMOUS_NAMES[Math.floor(Math.random() * ANONYMOUS_NAMES.length)];
+}
+
+// HTML 转义，防止 XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// 格式化相对时间
+function formatRelativeTime(dateStr) {
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diff = now - date;
+  
+  const minutes = Math.floor(diff / 60000);
+  const hours = Math.floor(diff / 3600000);
+  const days = Math.floor(diff / 86400000);
+  
+  if (minutes < 1) return '刚刚';
+  if (minutes < 60) return `${minutes}分钟前`;
+  if (hours < 24) return `${hours}小时前`;
+  if (days < 7) return `${days}天前`;
+  
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${month}月${day}日`;
+}
+
+// 获取主题显示名
+function getTypeLabel(type) {
+  const labels = {
+    flying: '飞翔', falling: '坠落', chasing: '追逐', reunion: '重逢',
+    water: '水', lost: '迷路', exam: '考试', teeth: '牙齿'
+  };
+  return labels[type] || type;
+}
+
+// 获取主题图标
+function getTypeIcon(type) {
+  const icons = {
+    flying: '🕊️', falling: '⬇️', chasing: '🏃', reunion: '👥',
+    water: '🌊', lost: '🌀', exam: '📝', teeth: '🦷'
+  };
+  return icons[type] || '🌙';
+}
 
 // 初始化同梦星球模块
 function initPlanetModule() {
@@ -736,6 +1235,18 @@ function initPlanetModule() {
   renderInspirationCard(currentKeyword);
   initKeywordEvents();
   initFeedEvents();
+  initPublishModal();
+  initCommentModal();
+  updateOnlineCount();
+}
+
+// 更新在线人数（模拟）
+function updateOnlineCount() {
+  const countEl = document.getElementById('planetOnlineCount');
+  if (countEl) {
+    const baseCount = 120 + Math.floor(Math.random() * 80);
+    countEl.textContent = `${baseCount}人在线`;
+  }
 }
 
 // 渲染同梦者列表
@@ -743,22 +1254,54 @@ function renderDreamers(keyword) {
   const container = document.getElementById('dreamersScroll');
   if (!container) return;
   
-  const filtered = keyword === 'all' 
-    ? DREAMERS_DATA 
-    : DREAMERS_DATA.filter(d => d.type === keyword);
+  const feedData = getFeedData();
   
-  if (filtered.length === 0) {
-    container.innerHTML = '<p style="color: var(--color-text-secondary); font-size: 13px;">暂无同梦者</p>';
+  // 从漂流瓶数据生成同梦者
+  const dreamersMap = {};
+  feedData.forEach(feed => {
+    if (!dreamersMap[feed.type]) {
+      dreamersMap[feed.type] = {
+        avatar: getTypeIcon(feed.type),
+        keyword: getTypeLabel(feed.type),
+        time: formatRelativeTime(feed.time),
+        type: feed.type,
+        feedId: feed.id
+      };
+    }
+  });
+  
+  let dreamers = Object.values(dreamersMap);
+  
+  if (keyword !== 'all') {
+    dreamers = dreamers.filter(d => d.type === keyword);
+  }
+  
+  if (dreamers.length === 0) {
+    container.innerHTML = '<p style="color: var(--color-text-secondary); font-size: 13px; padding: 10px;">暂无同梦者</p>';
     return;
   }
   
-  container.innerHTML = filtered.map(dreamer => `
-    <div class="dreamer-card" data-type="${dreamer.type}">
+  container.innerHTML = dreamers.map(dreamer => `
+    <div class="dreamer-card has-content" data-type="${dreamer.type}" data-feed-id="${dreamer.feedId}">
       <div class="dreamer-avatar">${dreamer.avatar}</div>
       <div class="dreamer-keyword">${dreamer.keyword}</div>
       <div class="dreamer-time">${dreamer.time}</div>
     </div>
   `).join('');
+  
+  // 点击同梦者卡片筛选
+  container.querySelectorAll('.dreamer-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const type = card.dataset.type;
+      const keywordBtns = document.querySelectorAll('.keyword-btn');
+      keywordBtns.forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.keyword === type);
+      });
+      currentKeyword = type;
+      renderFeed(type);
+      renderInspirationCard(type);
+    });
+  });
 }
 
 // 渲染漂流瓶
@@ -766,43 +1309,54 @@ function renderFeed(keyword) {
   const container = document.getElementById('feedList');
   if (!container) return;
   
-  const filtered = keyword === 'all'
-    ? FEED_DATA
-    : FEED_DATA.filter(f => f.type === keyword);
+  const feedData = getFeedData();
+  const resonanceState = getResonanceState();
+  const commentsData = getCommentsData();
+  
+  let filtered = keyword === 'all' ? feedData : feedData.filter(f => f.type === keyword);
+  
+  // 按时间排序（新的在前）
+  filtered.sort((a, b) => new Date(b.time) - new Date(a.time));
   
   if (filtered.length === 0) {
     container.innerHTML = '<p style="color: var(--color-text-secondary); font-size: 13px; text-align: center; padding: 20px;">这片星空暂时没有漂流瓶...</p>';
     return;
   }
   
-  container.innerHTML = filtered.map((item, index) => `
-    <div class="feed-item" data-index="${index}">
+  container.innerHTML = filtered.map(item => {
+    const isResonated = resonanceState[item.id] === true;
+    const comments = commentsData[item.id] || [];
+    const commentCount = comments.length;
+    
+    return `
+    <div class="feed-item" data-id="${item.id}">
       <div class="feed-header">
         <div class="feed-avatar">${item.avatar}</div>
         <div class="feed-info">
           <div class="feed-name">${item.name}</div>
-          <div class="feed-meta">${item.time}</div>
+          <div class="feed-meta">${formatRelativeTime(item.time)}</div>
         </div>
       </div>
-      <div class="feed-content">${item.content}</div>
+      <div class="feed-content">${escapeHtml(item.content.length > 60 ? item.content.substring(0, 60) + '...' : item.content)}</div>
       <div class="feed-tags">
-        ${item.tags.map(tag => `<span class="feed-tag">#${tag}</span>`).join('')}
+        ${item.tags.slice(0, 3).map(tag => `<span class="feed-tag">#${escapeHtml(tag)}</span>`).join('')}
       </div>
       <div class="feed-actions">
-        <button class="feed-action resonate-btn" data-index="${index}">
+        <button class="feed-action resonate-btn ${isResonated ? 'resonated' : ''}" data-id="${item.id}">
           <span>💫</span>
           <span>共鸣 ${item.resonance}</span>
         </button>
-        <button class="feed-action comment-btn">
+        <button class="feed-action comment-btn" data-id="${item.id}">
           <span>💭</span>
-          <span>说说感受</span>
+          <span>说说感受${commentCount > 0 ? ` (${commentCount})` : ''}</span>
         </button>
       </div>
     </div>
-  `).join('');
+  `;
+  }).join('');
 }
 
-// 渲染灵感卡片（基于当前关键词）
+// 渲染灵感卡片
 function renderInspirationCard(keyword) {
   const container = document.getElementById('themeInterpretation');
   if (!container) return;
@@ -855,22 +1409,28 @@ function initFeedEvents() {
   if (!feedList) return;
   
   feedList.addEventListener('click', (e) => {
+    // 共鸣按钮
     const resonateBtn = e.target.closest('.resonate-btn');
     if (resonateBtn) {
-      resonateBtn.classList.toggle('resonated');
-      const span = resonateBtn.querySelector('span:last-child');
-      const index = parseInt(resonateBtn.dataset.index);
-      if (resonateBtn.classList.contains('resonated')) {
-        FEED_DATA[index].resonance++;
-      } else {
-        FEED_DATA[index].resonance--;
-      }
-      span.textContent = `共鸣 ${FEED_DATA[index].resonance}`;
+      e.stopPropagation();
+      handleResonate(resonateBtn);
+      return;
     }
     
+    // 评论按钮
     const commentBtn = e.target.closest('.comment-btn');
     if (commentBtn) {
-      showToast('功能开发中...');
+      e.stopPropagation();
+      const feedId = commentBtn.dataset.id;
+      openCommentModal(feedId);
+      return;
+    }
+    
+    // 点击漂流瓶卡片
+    const feedItem = e.target.closest('.feed-item');
+    if (feedItem) {
+      const feedId = feedItem.dataset.id;
+      openDreamDetail(feedId);
     }
   });
   
@@ -878,9 +1438,308 @@ function initFeedEvents() {
   const shareBtn = document.getElementById('shareDreamBtn');
   if (shareBtn) {
     shareBtn.addEventListener('click', () => {
-      alert('漂流瓶功能开发中...\n\n未来你可以匿名分享你的梦境，寻找同频的梦旅人！');
+      openPublishModal();
     });
   }
+  
+  // 加载更多
+  const loadMoreBtn = document.getElementById('loadMoreFeed');
+  if (loadMoreBtn) {
+    loadMoreBtn.addEventListener('click', () => {
+      showToast('已显示全部梦境');
+    });
+  }
+}
+
+// 处理共鸣
+function handleResonate(btn) {
+  const feedId = btn.dataset.id;
+  const feedData = getFeedData();
+  const resonanceState = getResonanceState();
+  
+  const feed = feedData.find(f => f.id === feedId);
+  if (!feed) return;
+  
+  const wasResonated = resonanceState[feedId] === true;
+  
+  if (wasResonated) {
+    // 取消共鸣
+    feed.resonance--;
+    delete resonanceState[feedId];
+    btn.classList.remove('resonated');
+  } else {
+    // 添加共鸣
+    feed.resonance++;
+    resonanceState[feedId] = true;
+    btn.classList.add('resonated');
+  }
+  
+  btn.querySelector('span:last-child').textContent = `共鸣 ${feed.resonance}`;
+  
+  saveFeedData(feedData);
+  saveResonanceState(resonanceState);
+}
+
+// 打开发布弹窗
+function openPublishModal() {
+  const modal = document.getElementById('publishModal');
+  if (!modal) return;
+  
+  // 重置表单
+  document.getElementById('publishDreamInput').value = '';
+  document.getElementById('publishCustomTags').value = '';
+  document.querySelectorAll('.publish-tag').forEach(t => t.classList.remove('active'));
+  
+  modal.style.display = 'flex';
+}
+
+// 初始化发布弹窗
+function initPublishModal() {
+  const modal = document.getElementById('publishModal');
+  if (!modal) return;
+  
+  const closeBtn = document.getElementById('closePublishBtn');
+  const submitBtn = document.getElementById('submitPublishBtn');
+  const publishTags = document.getElementById('publishTags');
+  
+  // 关闭
+  closeBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  
+  modal.querySelector('.modal-backdrop').addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  
+  // 主题选择（单选）
+  publishTags.addEventListener('click', (e) => {
+    const tag = e.target.closest('.publish-tag');
+    if (tag) {
+      document.querySelectorAll('.publish-tag').forEach(t => t.classList.remove('active'));
+      tag.classList.add('active');
+    }
+  });
+  
+  // 提交
+  submitBtn.addEventListener('click', () => {
+    const content = document.getElementById('publishDreamInput').value.trim();
+    const customTags = document.getElementById('publishCustomTags').value.trim();
+    const activeType = document.querySelector('.publish-tag.active');
+    
+    if (!content) {
+      showToast('请描述你的梦境');
+      return;
+    }
+    
+    if (!activeType) {
+      showToast('请选择梦境主题');
+      return;
+    }
+    
+    const type = activeType.dataset.type;
+    
+    // 处理标签
+    let tags = [getTypeLabel(type)];
+    if (customTags) {
+      const extraTags = customTags.split(/\s+/).filter(t => t).slice(0, 3);
+      tags = tags.concat(extraTags);
+    }
+    
+    // 创建新漂流瓶
+    const newFeed = {
+      id: generateId(),
+      avatar: getRandomAvatar(),
+      name: getRandomName(),
+      time: new Date().toISOString(),
+      content: content,
+      tags: tags,
+      type: type,
+      resonance: 0
+    };
+    
+    // 保存
+    const feedData = getFeedData();
+    feedData.unshift(newFeed);
+    saveFeedData(feedData);
+    
+    // 刷新显示
+    renderDreamers(currentKeyword);
+    renderFeed(currentKeyword);
+    
+    // 关闭弹窗
+    modal.style.display = 'none';
+    showToast('漂流瓶已投放 ✨');
+  });
+}
+
+// 打开评论弹窗
+function openCommentModal(feedId) {
+  const modal = document.getElementById('commentModal');
+  if (!modal) return;
+  
+  currentCommentFeedId = feedId;
+  
+  const feedData = getFeedData();
+  const feed = feedData.find(f => f.id === feedId);
+  if (!feed) return;
+  
+  // 显示梦境预览
+  document.getElementById('commentDreamPreview').textContent = feed.content;
+  
+  // 渲染评论
+  renderComments(feedId);
+  
+  // 清空输入
+  document.getElementById('commentInput').value = '';
+  
+  modal.style.display = 'flex';
+}
+
+// 渲染评论
+function renderComments(feedId) {
+  const container = document.getElementById('commentList');
+  if (!container) return;
+  
+  const commentsData = getCommentsData();
+  const comments = commentsData[feedId] || [];
+  
+  if (comments.length === 0) {
+    container.innerHTML = '<p class="comment-empty">还没有人分享感受，来说点什么吧~</p>';
+    return;
+  }
+  
+  container.innerHTML = comments.map(comment => `
+    <div class="comment-item">
+      <div class="comment-avatar">${comment.avatar}</div>
+      <div class="comment-body">
+        <div class="comment-meta">
+          <span class="comment-name">${escapeHtml(comment.name)}</span>
+          <span class="comment-time">${formatRelativeTime(comment.time)}</span>
+        </div>
+        <div class="comment-text">${escapeHtml(comment.text)}</div>
+      </div>
+    </div>
+  `).join('');
+  
+  // 滚动到底部
+  container.scrollTop = container.scrollHeight;
+}
+
+// 初始化评论弹窗
+function initCommentModal() {
+  const modal = document.getElementById('commentModal');
+  if (!modal) return;
+  
+  const closeBtn = document.getElementById('closeCommentBtn');
+  const submitBtn = document.getElementById('submitCommentBtn');
+  const commentInput = document.getElementById('commentInput');
+  
+  // 关闭
+  closeBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+    currentCommentFeedId = null;
+  });
+  
+  modal.querySelector('.modal-backdrop').addEventListener('click', () => {
+    modal.style.display = 'none';
+    currentCommentFeedId = null;
+  });
+  
+  // 提交评论
+  submitBtn.addEventListener('click', () => {
+    const text = commentInput.value.trim();
+    if (!text) {
+      showToast('请写下你的感受');
+      return;
+    }
+    
+    if (!currentCommentFeedId) return;
+    
+    // 创建评论
+    const newComment = {
+      id: 'comment_' + Date.now(),
+      avatar: getRandomAvatar(),
+      name: getRandomName(),
+      time: new Date().toISOString(),
+      text: text
+    };
+    
+    // 只保存用户评论（不包含默认评论）
+    const saved = localStorage.getItem(PLANET_COMMENTS_KEY);
+    const userComments = saved ? JSON.parse(saved) : {};
+    if (!userComments[currentCommentFeedId]) {
+      userComments[currentCommentFeedId] = [];
+    }
+    userComments[currentCommentFeedId].push(newComment);
+    saveCommentsData(userComments);
+    
+    // 刷新评论
+    renderComments(currentCommentFeedId);
+    
+    // 刷新漂流瓶列表中的评论数
+    renderFeed(currentKeyword);
+    
+    // 清空输入
+    commentInput.value = '';
+    showToast('感受已发送 💭');
+  });
+}
+
+// 打开梦境详情
+function openDreamDetail(feedId) {
+  const modal = document.getElementById('dreamDetailModal');
+  if (!modal) return;
+  
+  const feedData = getFeedData();
+  const feed = feedData.find(f => f.id === feedId);
+  if (!feed) return;
+  
+  const resonanceState = getResonanceState();
+  const isResonated = resonanceState[feedId] === true;
+  
+  // 填充内容
+  document.getElementById('detailAvatar').textContent = feed.avatar;
+  document.getElementById('detailName').textContent = feed.name;
+  document.getElementById('detailTime').textContent = formatRelativeTime(feed.time);
+  document.getElementById('detailContent').textContent = feed.content;
+  document.getElementById('detailTags').innerHTML = feed.tags.map(tag => 
+    `<span class="feed-tag">#${escapeHtml(tag)}</span>`
+  ).join('');
+  
+  // 共鸣按钮
+  const resonateBtn = document.getElementById('detailResonateBtn');
+  resonateBtn.className = `feed-action resonate-btn ${isResonated ? 'resonated' : ''}`;
+  resonateBtn.dataset.id = feedId;
+  document.getElementById('detailResonateCount').textContent = `共鸣 ${feed.resonance}`;
+  
+  // 评论按钮
+  document.getElementById('detailCommentBtn').dataset.id = feedId;
+  
+  // 绑定事件
+  resonateBtn.onclick = () => {
+    handleResonate(resonateBtn);
+    // 重新读取最新数据
+    const updatedFeed = getFeedData().find(f => f.id === feedId);
+    if (updatedFeed) {
+      document.getElementById('detailResonateCount').textContent = `共鸣 ${updatedFeed.resonance}`;
+    }
+  };
+  
+  document.getElementById('detailCommentBtn').onclick = () => {
+    modal.style.display = 'none';
+    openCommentModal(feedId);
+  };
+  
+  // 关闭
+  document.getElementById('closeDreamDetailBtn').onclick = () => {
+    modal.style.display = 'none';
+  };
+  
+  modal.querySelector('.modal-backdrop').onclick = () => {
+    modal.style.display = 'none';
+  };
+  
+  modal.style.display = 'flex';
 }
 
 // 页面加载时初始化
