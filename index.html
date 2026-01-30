@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;600&family=Noto+Sans+SC:wght@300;400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=2.9">
+  <link rel="stylesheet" href="styles.css?v=3.11">
   <!-- AOS Animation Library -->
   <link href="https://unpkg.com/aos@2.3.1/dist/aos.css" rel="stylesheet">
 </head>
@@ -45,6 +45,10 @@
           <span class="nav-icon">⚙️</span>
           <span class="nav-text">大模型设置</span>
         </button>
+        <button class="nav-tab wallet-tab" id="walletBtn" onclick="handleWalletClick()">
+          <span class="wallet-icon">🔗</span>
+          <span class="wallet-text">连接钱包</span>
+        </button>
       </nav>
     </header>
 
@@ -54,10 +58,16 @@
       <div class="page page-dream active" id="pageDream">
       <!-- 记录梦境卡片 -->
       <section class="card dream-input-card" data-aos="fade-up" data-aos-duration="600">
-        <h2 class="card-title">
-          <span class="title-icon">✨</span>
-          记录你的梦境
-        </h2>
+        <div class="card-title-row">
+          <h2 class="card-title">
+            <span class="title-icon">✨</span>
+            记录你的梦境
+          </h2>
+          <button type="button" class="voice-btn" id="voiceBtn" title="语音输入">
+            <span class="voice-icon">🎙️</span>
+            <span class="voice-text">语音输入</span>
+          </button>
+        </div>
         <p class="card-subtitle">闭上眼，回忆梦中的画面，用文字捕捉那些转瞬即逝的片段...</p>
         
         <div class="input-group">
@@ -243,6 +253,9 @@
           </button>
           <button class="action-btn share-btn" id="shareBtn">
             <span>🎨</span> 生成分享卡片
+          </button>
+          <button class="action-btn planet-btn" id="shareToPlanetBtn">
+            <span>🪐</span> 分享到同梦星球
           </button>
         </div>
       </section>
@@ -590,7 +603,80 @@
     </div>
   </div>
 
+  <!-- 钱包选择模态框 -->
+  <div class="modal" id="walletSelectModal" style="display: none;">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content wallet-select-modal-content">
+      <div class="wallet-select-header">
+        <h3>🔗 选择钱包</h3>
+        <p class="wallet-select-subtitle">选择你常用的钱包进行连接</p>
+      </div>
+      
+      <div class="wallet-list" id="walletList">
+        <!-- 动态生成钱包列表 -->
+      </div>
+      
+      <div class="modal-actions">
+        <button class="modal-btn close-btn" id="closeWalletSelectBtn">取消</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 用户资料编辑模态框 -->
+  <div class="modal" id="profileModal" style="display: none;">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content profile-modal-content">
+      <div class="profile-header">
+        <h3>👤 我的资料</h3>
+        <p class="profile-subtitle">设置你的梦境身份</p>
+      </div>
+      
+      <div class="profile-form">
+        <!-- 钱包地址显示 -->
+        <div class="profile-group">
+          <label class="profile-label">钱包地址</label>
+          <div class="wallet-address-display" id="profileWalletAddress">未连接</div>
+        </div>
+        
+        <!-- 头像选择 -->
+        <div class="profile-group">
+          <label class="profile-label">选择头像</label>
+          <div class="avatar-picker" id="avatarPicker">
+            <button type="button" class="avatar-option" data-avatar="🕊️">🕊️</button>
+            <button type="button" class="avatar-option" data-avatar="🌙">🌙</button>
+            <button type="button" class="avatar-option" data-avatar="🔑">🔑</button>
+            <button type="button" class="avatar-option" data-avatar="🦋">🦋</button>
+            <button type="button" class="avatar-option" data-avatar="🌊">🌊</button>
+            <button type="button" class="avatar-option" data-avatar="⭐">⭐</button>
+            <button type="button" class="avatar-option" data-avatar="🌸">🌸</button>
+            <button type="button" class="avatar-option" data-avatar="🍃">🍃</button>
+            <button type="button" class="avatar-option" data-avatar="🔮">🔮</button>
+            <button type="button" class="avatar-option" data-avatar="💫">💫</button>
+            <button type="button" class="avatar-option" data-avatar="🌈">🌈</button>
+            <button type="button" class="avatar-option" data-avatar="🦢">🦢</button>
+            <button type="button" class="avatar-option" data-avatar="🐚">🐚</button>
+            <button type="button" class="avatar-option" data-avatar="🎐">🎐</button>
+            <button type="button" class="avatar-option" data-avatar="🪷">🪷</button>
+            <button type="button" class="avatar-option" data-avatar="🌺">🌺</button>
+          </div>
+        </div>
+        
+        <!-- 昵称输入 -->
+        <div class="profile-group">
+          <label class="profile-label">昵称</label>
+          <input type="text" id="profileNickname" class="profile-input" placeholder="给自己起个名字" maxlength="20">
+        </div>
+      </div>
+      
+      <div class="modal-actions">
+        <button class="modal-btn save-profile-btn" id="saveProfileBtn">保存资料</button>
+        <button class="modal-btn logout-btn" id="logoutBtn">断开连接</button>
+        <button class="modal-btn close-btn" id="closeProfileBtn">取消</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/aos@2.3.1/dist/aos.js"></script>
-  <script src="app.js?v=2.9"></script>
+  <script src="app.js?v=3.11"></script>
 </body>
 </html>

@@ -75,6 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSaveBtn();
   initShareBtn();
   initSettingsModal();
+  initVoiceInput();
   loadHistory();
 });
 
@@ -248,6 +249,51 @@ function initShareBtn() {
   shareModal.querySelector('.modal-backdrop').addEventListener('click', () => {
     shareModal.style.display = 'none';
   });
+  
+  // 分享到同梦星球按钮
+  const shareToPlanetBtn = document.getElementById('shareToPlanetBtn');
+  if (shareToPlanetBtn) {
+    shareToPlanetBtn.addEventListener('click', () => {
+      if (!currentDream || !currentInterpretation) return;
+      openShareToPlanetModal();
+    });
+  }
+}
+
+// 打开分享到同梦星球弹窗
+function openShareToPlanetModal() {
+  // 检查是否已登录
+  if (!isLoggedIn()) {
+    showToast('请先连接钱包');
+    return;
+  }
+  
+  const modal = document.getElementById('publishModal');
+  if (!modal) return;
+  
+  // 预填充梦境内容
+  document.getElementById('publishDreamInput').value = currentDream;
+  document.getElementById('publishCustomTags').value = '';
+  document.querySelectorAll('.publish-tag').forEach(t => t.classList.remove('active'));
+  
+  // 根据情绪自动选择主题
+  if (currentEmotion) {
+    const emotionToType = {
+      'peaceful': 'water',
+      'happy': 'flying',
+      'anxious': 'chasing',
+      'fearful': 'falling',
+      'confused': 'lost',
+      'nostalgic': 'reunion'
+    };
+    const suggestedType = emotionToType[currentEmotion];
+    if (suggestedType) {
+      const tag = document.querySelector(`.publish-tag[data-type="${suggestedType}"]`);
+      if (tag) tag.classList.add('active');
+    }
+  }
+  
+  modal.style.display = 'flex';
 }
 
 // 解梦 API 调用
@@ -685,6 +731,133 @@ document.head.appendChild(toastStyle);
 // 将 deleteDream 暴露到全局
 window.deleteDream = deleteDream;
 
+// ========== 语音输入模块 ==========
+let speechRecognition = null;
+let isRecording = false;
+let voiceFinalTranscript = '';
+
+function initVoiceInput() {
+  const voiceBtn = document.getElementById('voiceBtn');
+  if (!voiceBtn) {
+    console.log('语音按钮未找到');
+    return;
+  }
+  
+  // 检查浏览器是否支持语音识别
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    console.log('浏览器不支持语音识别');
+    // 不隐藏按钮，点击时提示
+    voiceBtn.addEventListener('click', () => {
+      showToast('您的浏览器不支持语音识别，请使用 Chrome 浏览器');
+    });
+    return;
+  }
+  
+  // 初始化语音识别
+  speechRecognition = new SpeechRecognition();
+  speechRecognition.continuous = true;
+  speechRecognition.interimResults = true;
+  speechRecognition.lang = 'zh-CN';
+  
+  speechRecognition.onstart = () => {
+    isRecording = true;
+    voiceFinalTranscript = dreamInput.value;
+    voiceBtn.classList.add('recording');
+    voiceBtn.querySelector('.voice-text').textContent = '录音中...';
+    voiceBtn.querySelector('.voice-icon').textContent = '🔴';
+    console.log('语音识别已启动');
+  };
+  
+  speechRecognition.onresult = (event) => {
+    let interimTranscript = '';
+    for (let i = event.resultIndex; i < event.results.length; i++) {
+      const transcript = event.results[i][0].transcript;
+      if (event.results[i].isFinal) {
+        voiceFinalTranscript += transcript;
+      } else {
+        interimTranscript += transcript;
+      }
+    }
+    dreamInput.value = voiceFinalTranscript + interimTranscript;
+  };
+  
+  speechRecognition.onerror = (event) => {
+    console.error('语音识别错误:', event.error);
+    stopRecording();
+    if (event.error === 'not-allowed') {
+      showToast('请允许麦克风权限');
+    } else if (event.error === 'no-speech') {
+      showToast('未检测到语音，请再试一次');
+    } else if (event.error === 'network') {
+      showToast('网络错误，请检查网络连接');
+    } else {
+      showToast('语音识别出错: ' + event.error);
+    }
+  };
+  
+  speechRecognition.onend = () => {
+    console.log('语音识别结束, isRecording:', isRecording);
+    if (isRecording) {
+      // 如果是意外结束，尝试重新开始
+      try {
+        speechRecognition.start();
+      } catch (e) {
+        console.error('重启语音识别失败:', e);
+        stopRecording();
+      }
+    }
+  };
+  
+  // 点击按钮切换录音状态
+  voiceBtn.addEventListener('click', () => {
+    console.log('语音按钮被点击, 当前状态:', isRecording ? '录音中' : '未录音');
+    if (isRecording) {
+      stopRecording();
+      showToast('语音输入已停止');
+    } else {
+      startRecording();
+    }
+  });
+  
+  console.log('语音输入模块初始化完成');
+}
+
+function startRecording() {
+  if (!speechRecognition) {
+    showToast('语音识别未初始化');
+    return;
+  }
+  try {
+    speechRecognition.start();
+    showToast('开始语音输入，请说话...');
+  } catch (e) {
+    console.error('启动语音识别失败:', e);
+    if (e.message.includes('already started')) {
+      showToast('语音识别已在运行中');
+    } else {
+      showToast('启动语音识别失败: ' + e.message);
+    }
+  }
+}
+
+function stopRecording() {
+  isRecording = false;
+  const voiceBtn = document.getElementById('voiceBtn');
+  if (voiceBtn) {
+    voiceBtn.classList.remove('recording');
+    voiceBtn.querySelector('.voice-text').textContent = '语音输入';
+    voiceBtn.querySelector('.voice-icon').textContent = '🎙️';
+  }
+  if (speechRecognition) {
+    try {
+      speechRecognition.stop();
+    } catch (e) {
+      console.log('停止语音识别:', e);
+    }
+  }
+}
+
 // 打开设置弹窗（全局函数）
 function openSettingsModal() {
   const settingsModal = document.getElementById('settingsModal');
@@ -1087,31 +1260,134 @@ const DEFAULT_COMMENTS_DATA = {
 // 当前状态
 let currentKeyword = 'all';
 let currentCommentFeedId = null;
+let cachedFeedData = null; // 缓存漂流瓶数据
 
-// 获取漂流瓶数据
-function getFeedData() {
+// 从API获取漂流瓶数据
+async function fetchFeedDataFromAPI(type = 'all') {
   try {
-    const saved = localStorage.getItem(PLANET_FEED_KEY);
-    if (saved) {
-      const data = JSON.parse(saved);
-      return data.length > 0 ? data : DEFAULT_FEED_DATA;
-    }
-    return DEFAULT_FEED_DATA;
-  } catch {
-    return DEFAULT_FEED_DATA;
-  }
-}
-
-// 保存漂流瓶数据
-function saveFeedData(data) {
-  try {
-    localStorage.setItem(PLANET_FEED_KEY, JSON.stringify(data));
+    const url = type === 'all' ? `${API_BASE}/dreams` : `${API_BASE}/dreams?type=${type}`;
+    const response = await fetch(url);
+    if (!response.ok) throw new Error('获取失败');
+    const data = await response.json();
+    // 转换为前端格式
+    return data.map(d => ({
+      id: d.id,
+      avatar: d.user.avatar,
+      name: d.user.nickname,
+      time: d.createdAt,
+      content: d.content,
+      tags: d.tags,
+      type: d.type,
+      resonance: d.resonance,
+      commentCount: d.commentCount || 0
+    }));
   } catch (e) {
-    console.error('保存漂流瓶失败:', e);
+    console.error('从API获取漂流瓶失败:', e);
+    return DEFAULT_FEED_DATA;
   }
 }
 
-// 获取共鸣状态
+// 获取漂流瓶数据（优先从缓存）
+function getFeedData() {
+  return cachedFeedData || DEFAULT_FEED_DATA;
+}
+
+// 刷新漂流瓶数据
+async function refreshFeedData(type = 'all') {
+  cachedFeedData = await fetchFeedDataFromAPI(type);
+  return cachedFeedData;
+}
+
+// 发布漂流瓶到API
+async function publishDreamToAPI(content, tags, type) {
+  const user = getCurrentUser();
+  if (!user) throw new Error('请先连接钱包');
+  
+  const response = await fetch(`${API_BASE}/dreams`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      walletAddress: user.walletAddress,
+      content,
+      tags,
+      type
+    })
+  });
+  
+  if (!response.ok) throw new Error('发布失败');
+  return response.json();
+}
+
+// 从API获取评论
+async function fetchCommentsFromAPI(dreamId) {
+  try {
+    const response = await fetch(`${API_BASE}/dreams/${dreamId}/comments`);
+    if (!response.ok) throw new Error('获取评论失败');
+    const data = await response.json();
+    return data.map(c => ({
+      id: c.id,
+      avatar: c.user.avatar,
+      name: c.user.nickname,
+      time: c.createdAt,
+      text: c.content
+    }));
+  } catch (e) {
+    console.error('获取评论失败:', e);
+    return [];
+  }
+}
+
+// 发表评论到API
+async function postCommentToAPI(dreamId, content) {
+  const user = getCurrentUser();
+  if (!user) throw new Error('请先连接钱包');
+  
+  const response = await fetch(`${API_BASE}/dreams/${dreamId}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      walletAddress: user.walletAddress,
+      content
+    })
+  });
+  
+  if (!response.ok) throw new Error('评论失败');
+  return response.json();
+}
+
+// 切换共鸣状态
+async function toggleResonanceAPI(dreamId) {
+  const user = getCurrentUser();
+  if (!user) throw new Error('请先连接钱包');
+  
+  const response = await fetch(`${API_BASE}/dreams/${dreamId}/resonance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      walletAddress: user.walletAddress
+    })
+  });
+  
+  if (!response.ok) throw new Error('操作失败');
+  return response.json();
+}
+
+// 检查是否已共鸣
+async function checkResonanceAPI(dreamId) {
+  const user = getCurrentUser();
+  if (!user) return false;
+  
+  try {
+    const response = await fetch(`${API_BASE}/dreams/${dreamId}/resonance/${user.walletAddress}`);
+    if (!response.ok) return false;
+    const data = await response.json();
+    return data.resonated;
+  } catch {
+    return false;
+  }
+}
+
+// 保留本地存储函数作为降级方案
 function getResonanceState() {
   try {
     const saved = localStorage.getItem(PLANET_RESONANCE_KEY);
@@ -1121,50 +1397,11 @@ function getResonanceState() {
   }
 }
 
-// 保存共鸣状态
 function saveResonanceState(state) {
   try {
     localStorage.setItem(PLANET_RESONANCE_KEY, JSON.stringify(state));
   } catch (e) {
     console.error('保存共鸣状态失败:', e);
-  }
-}
-
-// 获取评论数据（合并默认评论和用户评论）
-function getCommentsData() {
-  try {
-    const saved = localStorage.getItem(PLANET_COMMENTS_KEY);
-    const userComments = saved ? JSON.parse(saved) : {};
-    
-    // 合并默认评论和用户评论
-    const merged = {};
-    
-    // 先添加默认评论
-    for (const feedId in DEFAULT_COMMENTS_DATA) {
-      merged[feedId] = [...DEFAULT_COMMENTS_DATA[feedId]];
-    }
-    
-    // 再添加用户评论（追加到默认评论后面）
-    for (const feedId in userComments) {
-      if (merged[feedId]) {
-        merged[feedId] = merged[feedId].concat(userComments[feedId]);
-      } else {
-        merged[feedId] = userComments[feedId];
-      }
-    }
-    
-    return merged;
-  } catch {
-    return { ...DEFAULT_COMMENTS_DATA };
-  }
-}
-
-// 保存评论数据
-function saveCommentsData(data) {
-  try {
-    localStorage.setItem(PLANET_COMMENTS_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error('保存评论失败:', e);
   }
 }
 
@@ -1304,14 +1541,17 @@ function renderDreamers(keyword) {
   });
 }
 
-// 渲染漂流瓶
-function renderFeed(keyword) {
+// 渲染漂流瓶（异步版本）
+async function renderFeed(keyword) {
   const container = document.getElementById('feedList');
   if (!container) return;
   
-  const feedData = getFeedData();
+  // 显示加载状态
+  container.innerHTML = '<p style="color: var(--color-text-secondary); font-size: 13px; text-align: center; padding: 20px;">加载中...</p>';
+  
+  // 从 API 获取数据
+  const feedData = await refreshFeedData(keyword);
   const resonanceState = getResonanceState();
-  const commentsData = getCommentsData();
   
   let filtered = keyword === 'all' ? feedData : feedData.filter(f => f.type === keyword);
   
@@ -1325,8 +1565,6 @@ function renderFeed(keyword) {
   
   container.innerHTML = filtered.map(item => {
     const isResonated = resonanceState[item.id] === true;
-    const comments = commentsData[item.id] || [];
-    const commentCount = comments.length;
     
     return `
     <div class="feed-item" data-id="${item.id}">
@@ -1348,7 +1586,7 @@ function renderFeed(keyword) {
         </button>
         <button class="feed-action comment-btn" data-id="${item.id}">
           <span>💭</span>
-          <span>说说感受${commentCount > 0 ? ` (${commentCount})` : ''}</span>
+          <span>感受 ${item.commentCount || 0}</span>
         </button>
       </div>
     </div>
@@ -1452,36 +1690,67 @@ function initFeedEvents() {
 }
 
 // 处理共鸣
-function handleResonate(btn) {
+async function handleResonate(btn) {
   const feedId = btn.dataset.id;
-  const feedData = getFeedData();
-  const resonanceState = getResonanceState();
   
-  const feed = feedData.find(f => f.id === feedId);
-  if (!feed) return;
+  // 检查是否登录
+  if (!isLoggedIn()) {
+    showToast('请先连接钱包');
+    return;
+  }
   
-  const wasResonated = resonanceState[feedId] === true;
+  const wasResonated = btn.classList.contains('resonated');
   
+  // 先更新UI
   if (wasResonated) {
-    // 取消共鸣
-    feed.resonance--;
-    delete resonanceState[feedId];
     btn.classList.remove('resonated');
   } else {
-    // 添加共鸣
-    feed.resonance++;
-    resonanceState[feedId] = true;
     btn.classList.add('resonated');
   }
   
-  btn.querySelector('span:last-child').textContent = `共鸣 ${feed.resonance}`;
-  
-  saveFeedData(feedData);
-  saveResonanceState(resonanceState);
+  try {
+    // 调用API
+    const result = await toggleResonanceAPI(feedId);
+    
+    if (result && result.success !== false) {
+      // API成功，更新显示
+      const count = result.count !== undefined ? result.count : (result.resonance || 0);
+      btn.querySelector('span:last-child').textContent = `共鸣 ${count}`;
+      if (result.resonated || result.action === 'added') {
+        btn.classList.add('resonated');
+      } else {
+        btn.classList.remove('resonated');
+      }
+      // 更新缓存
+      if (cachedFeedData) {
+        const feed = cachedFeedData.find(f => String(f.id) === String(feedId));
+        if (feed) {
+          feed.resonance = count;
+        }
+      }
+    } else {
+      throw new Error('操作失败');
+    }
+  } catch (error) {
+    console.error('共鸣操作失败:', error);
+    // API失败，回滚UI
+    if (wasResonated) {
+      btn.classList.add('resonated');
+    } else {
+      btn.classList.remove('resonated');
+    }
+    showToast('操作失败，请稍后再试');
+  }
 }
 
 // 打开发布弹窗
 function openPublishModal() {
+  // 检查是否已登录
+  if (!isLoggedIn()) {
+    showToast('请先连接钱包');
+    return;
+  }
+  
   const modal = document.getElementById('publishModal');
   if (!modal) return;
   
@@ -1521,7 +1790,7 @@ function initPublishModal() {
   });
   
   // 提交
-  submitBtn.addEventListener('click', () => {
+  submitBtn.addEventListener('click', async () => {
     const content = document.getElementById('publishDreamInput').value.trim();
     const customTags = document.getElementById('publishCustomTags').value.trim();
     const activeType = document.querySelector('.publish-tag.active');
@@ -1545,43 +1814,43 @@ function initPublishModal() {
       tags = tags.concat(extraTags);
     }
     
-    // 创建新漂流瓶
-    const newFeed = {
-      id: generateId(),
-      avatar: getRandomAvatar(),
-      name: getRandomName(),
-      time: new Date().toISOString(),
-      content: content,
-      tags: tags,
-      type: type,
-      resonance: 0
-    };
-    
-    // 保存
-    const feedData = getFeedData();
-    feedData.unshift(newFeed);
-    saveFeedData(feedData);
-    
-    // 刷新显示
-    renderDreamers(currentKeyword);
-    renderFeed(currentKeyword);
-    
-    // 关闭弹窗
-    modal.style.display = 'none';
-    showToast('漂流瓶已投放 ✨');
+    try {
+      // 调用 API 发布
+      await publishDreamToAPI(content, tags, type);
+      
+      // 刷新显示
+      renderDreamers(currentKeyword);
+      await renderFeed(currentKeyword);
+      
+      // 关闭弹窗
+      modal.style.display = 'none';
+      showToast('漂流瓶已投放 ✨');
+    } catch (error) {
+      console.error('发布失败:', error);
+      showToast(error.message || '发布失败，请稍后重试');
+    }
   });
 }
 
 // 打开评论弹窗
-function openCommentModal(feedId) {
+async function openCommentModal(feedId) {
   const modal = document.getElementById('commentModal');
   if (!modal) return;
   
   currentCommentFeedId = feedId;
   
-  const feedData = getFeedData();
-  const feed = feedData.find(f => f.id === feedId);
-  if (!feed) return;
+  // 确保缓存数据已加载
+  let feedData = getFeedData();
+  if (!feedData || feedData.length === 0 || feedData === DEFAULT_FEED_DATA) {
+    feedData = await refreshFeedData();
+  }
+  
+  const feed = feedData.find(f => String(f.id) === String(feedId));
+  if (!feed) {
+    console.error('未找到梦境, feedId:', feedId, 'feedData:', feedData);
+    showToast('梦境不存在');
+    return;
+  }
   
   // 显示梦境预览
   document.getElementById('commentDreamPreview').textContent = feed.content;
@@ -1595,13 +1864,15 @@ function openCommentModal(feedId) {
   modal.style.display = 'flex';
 }
 
-// 渲染评论
-function renderComments(feedId) {
+// 渲染评论（异步版本）
+async function renderComments(feedId) {
   const container = document.getElementById('commentList');
   if (!container) return;
   
-  const commentsData = getCommentsData();
-  const comments = commentsData[feedId] || [];
+  container.innerHTML = '<p class="comment-empty">加载中...</p>';
+  
+  // 从 API 获取评论
+  const comments = await fetchCommentsFromAPI(feedId);
   
   if (comments.length === 0) {
     container.innerHTML = '<p class="comment-empty">还没有人分享感受，来说点什么吧~</p>';
@@ -1646,7 +1917,13 @@ function initCommentModal() {
   });
   
   // 提交评论
-  submitBtn.addEventListener('click', () => {
+  submitBtn.addEventListener('click', async () => {
+    // 检查是否已登录
+    if (!isLoggedIn()) {
+      showToast('请先连接钱包');
+      return;
+    }
+    
     const text = commentInput.value.trim();
     if (!text) {
       showToast('请写下你的感受');
@@ -1655,33 +1932,20 @@ function initCommentModal() {
     
     if (!currentCommentFeedId) return;
     
-    // 创建评论
-    const newComment = {
-      id: 'comment_' + Date.now(),
-      avatar: getRandomAvatar(),
-      name: getRandomName(),
-      time: new Date().toISOString(),
-      text: text
-    };
-    
-    // 只保存用户评论（不包含默认评论）
-    const saved = localStorage.getItem(PLANET_COMMENTS_KEY);
-    const userComments = saved ? JSON.parse(saved) : {};
-    if (!userComments[currentCommentFeedId]) {
-      userComments[currentCommentFeedId] = [];
+    try {
+      // 调用 API 发表评论
+      await postCommentToAPI(currentCommentFeedId, text);
+      
+      // 刷新评论
+      await renderComments(currentCommentFeedId);
+      
+      // 清空输入
+      commentInput.value = '';
+      showToast('感受已发送 💭');
+    } catch (error) {
+      console.error('评论失败:', error);
+      showToast(error.message || '评论失败，请稍后重试');
     }
-    userComments[currentCommentFeedId].push(newComment);
-    saveCommentsData(userComments);
-    
-    // 刷新评论
-    renderComments(currentCommentFeedId);
-    
-    // 刷新漂流瓶列表中的评论数
-    renderFeed(currentKeyword);
-    
-    // 清空输入
-    commentInput.value = '';
-    showToast('感受已发送 💭');
   });
 }
 
@@ -1745,4 +2009,481 @@ function openDreamDetail(feedId) {
 // 页面加载时初始化
 document.addEventListener('DOMContentLoaded', () => {
   setTimeout(initPlanetModule, 500);
+  initWalletModule();
 });
+
+// ========== 钱包与用户模块 ==========
+
+// API 地址：使用相对路径，通过 Nginx 反向代理
+const API_BASE = '/api';
+const USER_STORAGE_KEY = 'dream_user';
+
+// 当前用户状态
+let currentUser = null;
+let selectedAvatar = '🌙';
+
+// 初始化钱包模块
+function initWalletModule() {
+  // 检查本地存储的用户信息
+  loadUserFromStorage();
+  
+  // 初始化钱包选择弹窗
+  initWalletSelectModal();
+  
+  // 初始化用户资料弹窗
+  initProfileModal();
+  
+  // 更新钱包按钮状态
+  updateWalletButton();
+}
+
+// 从本地存储加载用户
+function loadUserFromStorage() {
+  try {
+    const saved = localStorage.getItem(USER_STORAGE_KEY);
+    if (saved) {
+      currentUser = JSON.parse(saved);
+      updateWalletButton();
+    }
+  } catch (e) {
+    console.error('加载用户信息失败:', e);
+  }
+}
+
+// 保存用户到本地存储
+function saveUserToStorage(user) {
+  try {
+    localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
+  } catch (e) {
+    console.error('保存用户信息失败:', e);
+  }
+}
+
+// 清除本地用户信息
+function clearUserFromStorage() {
+  try {
+    localStorage.removeItem(USER_STORAGE_KEY);
+  } catch (e) {
+    console.error('清除用户信息失败:', e);
+  }
+}
+
+// 更新钱包按钮显示
+function updateWalletButton() {
+  const walletBtn = document.getElementById('walletBtn');
+  if (!walletBtn) return;
+  
+  if (currentUser) {
+    walletBtn.classList.add('connected');
+    walletBtn.innerHTML = `
+      <span class="nav-icon wallet-avatar">${currentUser.avatar}</span>
+      <span class="nav-text wallet-text">${currentUser.nickname}</span>
+    `;
+  } else {
+    walletBtn.classList.remove('connected');
+    walletBtn.innerHTML = `
+      <span class="nav-icon wallet-icon">🔗</span>
+      <span class="nav-text wallet-text">连接钱包</span>
+    `;
+  }
+}
+
+// 处理钱包按钮点击
+async function handleWalletClick() {
+  if (currentUser) {
+    // 已登录，打开用户资料弹窗
+    openProfileModal();
+  } else {
+    // 未登录，打开钱包选择弹窗
+    openWalletModal();
+  }
+}
+window.handleWalletClick = handleWalletClick;
+
+// 钱包配置
+const WALLET_CONFIG = {
+  metamask: {
+    name: 'MetaMask',
+    icon: '🦊',
+    check: () => window.ethereum?.isMetaMask,
+    provider: () => window.ethereum
+  },
+  okx: {
+    name: 'OKX Wallet',
+    icon: '⭕',
+    check: () => window.okxwallet,
+    provider: () => window.okxwallet
+  },
+  coinbase: {
+    name: 'Coinbase Wallet',
+    icon: '🔵',
+    check: () => window.ethereum?.isCoinbaseWallet || window.coinbaseWalletExtension,
+    provider: () => window.coinbaseWalletExtension || window.ethereum
+  },
+  bitget: {
+    name: 'Bitget Wallet',
+    icon: '🟦',
+    check: () => window.bitkeep?.ethereum,
+    provider: () => window.bitkeep?.ethereum
+  },
+  tokenpocket: {
+    name: 'TokenPocket',
+    icon: '🟣',
+    check: () => window.ethereum?.isTokenPocket,
+    provider: () => window.ethereum
+  },
+  trust: {
+    name: 'Trust Wallet',
+    icon: '🛡️',
+    check: () => window.ethereum?.isTrust || window.trustwallet,
+    provider: () => window.trustwallet || window.ethereum
+  },
+  phantom: {
+    name: 'Phantom',
+    icon: '👻',
+    check: () => window.phantom?.ethereum,
+    provider: () => window.phantom?.ethereum
+  },
+  generic: {
+    name: '其他钱包',
+    icon: '🔗',
+    check: () => window.ethereum,
+    provider: () => window.ethereum
+  }
+};
+
+// 打开钱包选择弹窗
+function openWalletModal() {
+  const modal = document.getElementById('walletSelectModal');
+  if (!modal) return;
+  
+  const walletList = document.getElementById('walletList');
+  
+  // 检测可用钱包
+  const availableWallets = [];
+  const unavailableWallets = [];
+  
+  for (const [key, config] of Object.entries(WALLET_CONFIG)) {
+    if (key === 'generic') continue; // 最后处理通用钱包
+    const wallet = { key, ...config, available: config.check() };
+    if (wallet.available) {
+      availableWallets.push(wallet);
+    } else {
+      unavailableWallets.push(wallet);
+    }
+  }
+  
+  // 如果有ethereum但没识别出具体钱包，显示通用选项
+  if (availableWallets.length === 0 && window.ethereum) {
+    availableWallets.push({ key: 'generic', ...WALLET_CONFIG.generic, available: true });
+  }
+  
+  // 渲染钱包列表
+  walletList.innerHTML = `
+    ${availableWallets.length > 0 ? `
+      <div class="wallet-section-title">已安装</div>
+      ${availableWallets.map(w => `
+        <button class="wallet-option available" data-wallet="${w.key}">
+          <span class="wallet-option-icon">${w.icon}</span>
+          <span class="wallet-option-name">${w.name}</span>
+          <span class="wallet-option-status">可连接</span>
+        </button>
+      `).join('')}
+    ` : ''}
+    ${unavailableWallets.length > 0 ? `
+      <div class="wallet-section-title">未检测到</div>
+      ${unavailableWallets.map(w => `
+        <button class="wallet-option unavailable" data-wallet="${w.key}" disabled>
+          <span class="wallet-option-icon">${w.icon}</span>
+          <span class="wallet-option-name">${w.name}</span>
+          <span class="wallet-option-status">未安装</span>
+        </button>
+      `).join('')}
+    ` : ''}
+    ${availableWallets.length === 0 && !window.ethereum ? `
+      <div class="wallet-empty">
+        <p>未检测到任何钱包</p>
+        <p class="wallet-empty-hint">请安装 MetaMask 或其他 Web3 钱包</p>
+      </div>
+    ` : ''}
+  `;
+  
+  modal.style.display = 'flex';
+}
+
+// 初始化钱包选择弹窗
+function initWalletSelectModal() {
+  const modal = document.getElementById('walletSelectModal');
+  if (!modal) return;
+  
+  const closeBtn = document.getElementById('closeWalletSelectBtn');
+  const walletList = document.getElementById('walletList');
+  
+  // 关闭弹窗
+  closeBtn?.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  
+  modal.querySelector('.modal-backdrop')?.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  
+  // 钱包选择
+  walletList?.addEventListener('click', async (e) => {
+    const option = e.target.closest('.wallet-option.available');
+    if (!option) return;
+    
+    const walletKey = option.dataset.wallet;
+    modal.style.display = 'none';
+    await connectWallet(walletKey);
+  });
+}
+
+// BSC 主网配置
+const BSC_CHAIN_CONFIG = {
+  chainId: '0x38', // 56 in hex
+  chainName: 'BNB Smart Chain',
+  nativeCurrency: {
+    name: 'BNB',
+    symbol: 'BNB',
+    decimals: 18
+  },
+  rpcUrls: ['https://bsc-dataseed.binance.org/'],
+  blockExplorerUrls: ['https://bscscan.com/']
+};
+
+// 切换到 BSC 主网
+async function switchToBSC(provider) {
+  try {
+    await provider.request({
+      method: 'wallet_switchEthereumChain',
+      params: [{ chainId: BSC_CHAIN_CONFIG.chainId }]
+    });
+    return true;
+  } catch (switchError) {
+    // 如果链不存在，添加它
+    if (switchError.code === 4902) {
+      try {
+        await provider.request({
+          method: 'wallet_addEthereumChain',
+          params: [BSC_CHAIN_CONFIG]
+        });
+        return true;
+      } catch (addError) {
+        console.error('添加 BSC 网络失败:', addError);
+        return false;
+      }
+    }
+    console.error('切换网络失败:', switchError);
+    return false;
+  }
+}
+
+// 连接钱包
+async function connectWallet(walletKey = 'generic') {
+  const config = WALLET_CONFIG[walletKey];
+  if (!config) {
+    showToast('不支持的钱包类型');
+    return;
+  }
+  
+  const provider = config.provider();
+  if (!provider) {
+    showToast(`请先安装 ${config.name}`);
+    return;
+  }
+  
+  try {
+    showToast(`正在连接 ${config.name}...`);
+    
+    // 请求连接钱包
+    const accounts = await provider.request({ 
+      method: 'eth_requestAccounts' 
+    });
+    
+    if (accounts.length === 0) {
+      showToast('未获取到钱包地址');
+      return;
+    }
+    
+    // 切换到 BSC 主网
+    showToast('正在切换到 BSC 主网...');
+    const switched = await switchToBSC(provider);
+    if (!switched) {
+      showToast('切换到 BSC 网络失败，请手动切换');
+    }
+    
+    const walletAddress = accounts[0].toLowerCase();
+    console.log('钱包已连接:', walletAddress, '类型:', config.name);
+    
+    // 调用后端 API 登录/注册
+    try {
+      const response = await fetch(`${API_BASE}/auth/wallet`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ walletAddress, walletType: walletKey })
+      });
+      
+      if (!response.ok) {
+        throw new Error('服务器错误');
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        currentUser = data.user;
+        currentUser.walletType = walletKey;
+        saveUserToStorage(currentUser);
+        updateWalletButton();
+        
+        if (data.isNew) {
+          showToast('注册成功！点击头像可以修改资料');
+          setTimeout(() => openProfileModal(), 500);
+        } else {
+          showToast(`欢迎回来，${currentUser.nickname}`);
+        }
+      }
+    } catch (apiError) {
+      console.error('API 调用失败，使用本地模式:', apiError);
+      // 后端不可用时使用本地模式
+      currentUser = {
+        walletAddress: walletAddress,
+        nickname: '梦旅人_' + walletAddress.slice(-4),
+        avatar: '🌙',
+        walletType: walletKey
+      };
+      saveUserToStorage(currentUser);
+      updateWalletButton();
+      showToast('钱包已连接（本地模式）');
+    }
+  } catch (error) {
+    console.error('连接钱包失败:', error);
+    if (error.code === 4001) {
+      showToast('您取消了钱包连接');
+    } else {
+      showToast('连接钱包失败: ' + (error.message || '未知错误'));
+    }
+  }
+}
+
+// 打开用户资料弹窗
+function openProfileModal() {
+  const modal = document.getElementById('profileModal');
+  if (!modal || !currentUser) return;
+  
+  // 填充当前用户信息
+  document.getElementById('profileWalletAddress').textContent = currentUser.walletAddress;
+  document.getElementById('profileNickname').value = currentUser.nickname || '';
+  
+  // 设置当前头像选中状态
+  selectedAvatar = currentUser.avatar || '🌙';
+  document.querySelectorAll('.avatar-option').forEach(opt => {
+    opt.classList.toggle('active', opt.dataset.avatar === selectedAvatar);
+  });
+  
+  modal.style.display = 'flex';
+}
+
+// 初始化用户资料弹窗
+function initProfileModal() {
+  const modal = document.getElementById('profileModal');
+  if (!modal) return;
+  
+  const closeBtn = document.getElementById('closeProfileBtn');
+  const saveBtn = document.getElementById('saveProfileBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const avatarPicker = document.getElementById('avatarPicker');
+  
+  // 关闭弹窗
+  closeBtn.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  
+  modal.querySelector('.modal-backdrop').addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+  
+  // 头像选择
+  avatarPicker.addEventListener('click', (e) => {
+    const option = e.target.closest('.avatar-option');
+    if (option) {
+      document.querySelectorAll('.avatar-option').forEach(o => o.classList.remove('active'));
+      option.classList.add('active');
+      selectedAvatar = option.dataset.avatar;
+    }
+  });
+  
+  // 保存资料
+  saveBtn.addEventListener('click', async () => {
+    const nickname = document.getElementById('profileNickname').value.trim();
+    
+    if (!nickname) {
+      showToast('请输入昵称');
+      return;
+    }
+    
+    if (!currentUser) return;
+    
+    // 确保地址是小写的
+    const walletAddress = currentUser.walletAddress.toLowerCase();
+    
+    try {
+      const response = await fetch(`${API_BASE}/user/${walletAddress}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nickname: nickname,
+          avatar: selectedAvatar
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error('更新失败');
+      }
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        currentUser = data.user;
+        currentUser.walletType = currentUser.walletType || 'generic';
+        saveUserToStorage(currentUser);
+        updateWalletButton();
+        modal.style.display = 'none';
+        showToast('资料已更新');
+      }
+    } catch (error) {
+      console.error('更新资料失败，使用本地模式:', error);
+      // 后端不可用时使用本地模式保存
+      currentUser.nickname = nickname;
+      currentUser.avatar = selectedAvatar;
+      currentUser.walletAddress = walletAddress;
+      saveUserToStorage(currentUser);
+      updateWalletButton();
+      modal.style.display = 'none';
+      showToast('资料已更新（本地模式）');
+    }
+  });
+  
+  // 断开连接
+  logoutBtn.addEventListener('click', () => {
+    currentUser = null;
+    clearUserFromStorage();
+    updateWalletButton();
+    modal.style.display = 'none';
+    showToast('已断开钱包连接');
+  });
+}
+
+// 检查是否已登录
+function isLoggedIn() {
+  return currentUser !== null;
+}
+
+// 获取当前用户
+function getCurrentUser() {
+  return currentUser;
+}
+
+// 暴露到全局
+window.isLoggedIn = isLoggedIn;
+window.getCurrentUser = getCurrentUser;

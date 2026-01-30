@@ -1,72 +1,98 @@
-# 🌙 Dreamwhisper
+# Dreamwhisper 梦语者
 
-**把昨夜的梦，翻译成今天的诗**
+一个基于 Web3 的梦境解析与分享社区平台。
 
-Dreamwhisper 是一款基于 AI 的梦境解析应用，帮助你探索潜意识的秘密，更好地了解内心世界。
+## 功能特性
 
-## ✨ 功能特点
+### 🌙 梦境解析
+- 支持 DeepSeek、OpenAI、Gemini 多种 AI 模型
+- 弗洛伊德心理学解析模式
+- 周公解梦传统文化解析模式
+- MBTI 人格结合分析
+- 语音输入支持（中文）
 
-### 🔮 智能解梦
-- 输入梦境描述，AI 自动解析梦境含义
-- 支持两种解析风格：
-  - **心理探索** - 荣格式深度心理分析
-  - **玄学趣味** - 星座塔罗神秘解读
+### 🪐 同梦星球
+- 匿名分享梦境漂流瓶
+- 多种梦境主题分类（飞翔、坠落、追逐、水、重逢、迷路、考试、牙齿）
+- 共鸣互动功能
+- 评论交流功能
+- 梦境灵感卡片
 
-### 🧬 MBTI 人格融合
-- 选择你的 MBTI 人格类型
-- AI 根据你的思维方式提供个性化解读
+### 🔗 Web3 钱包集成
+- 支持多种钱包：MetaMask、OKX、Coinbase、Bitget、TokenPocket、Trust、Phantom
+- BSC 主网自动切换
+- 钱包地址自动注册/登录
+- 自定义头像和昵称
 
-### 💭 境况分析
-- 记录近期困扰、重要事件、情感状态
-- AI 结合现实境况，深入分析梦境与生活的关联
+## 技术栈
 
-### 📖 梦境日记
-- 本地保存梦境记录
-- 随时回顾历史梦境与解析
-- 支持添加个人感悟
+### 前端
+- 原生 HTML/CSS/JavaScript
+- AOS 动画库
+- Web Speech API（语音识别）
 
-### 🪐 同梦星球 (v2.9 新增)
-- **关键词筛选** - 飞翔/坠落/追逐/重逢/水/迷路 7种主题
-- **同梦者列表** - 按梦境类型分组显示
-- **漂流瓶列表** - 简介展示，点击查看详情
-- **投放漂流瓶** - 发布新梦境，选择主题和标签
-- **共鸣功能** - 点赞/取消，数量实时更新
-- **评论功能** - 查看默认评论+发送新评论
-- **梦境详情弹窗** - 完整内容、标签、共鸣、评论入口
-- **梦境灵感卡片** - 按主题显示心理学解读
-- **数据持久化** - localStorage 本地保存
-- **XSS 安全防护** - HTML 转义用户输入
+### 后端
+- Node.js + Express
+- SQLite 数据库
+- RESTful API
 
-## 🛠️ 技术栈
+### 部署
+- Nginx 反向代理
+- PM2 进程管理
+- HTTPS/SSL
 
-- **前端**: HTML5 + CSS3 + JavaScript (原生)
-- **AI**: DeepSeek API
-- **动画**: AOS.js
-- **字体**: Noto Serif SC / Noto Sans SC
+## 安装部署
 
-## 🚀 快速开始
-
-1. 克隆仓库
+### 1. 安装依赖
 ```bash
-git clone https://github.com/bbathawstemen/dreamwhisper.git
+cd dream-app
+npm install
 ```
 
-2. 直接用浏览器打开 `index.html`，或部署到任意 Web 服务器
+### 2. 启动后端服务
+```bash
+# 开发模式
+node server.js
 
-3. 配置 API Key（在 `app.js` 中修改 `API_KEY`）
+# 生产模式（使用 PM2）
+pm2 start server.js --name dreamwhisper-api
+pm2 save
+```
 
-## 🌐 在线体验
+### 3. Nginx 配置
+```nginx
+location /api/ {
+    proxy_pass http://127.0.0.1:3000/api/;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
 
-访问：[https://www.dreamwhisper.fun](https://www.dreamwhisper.fun)
+## API 接口
 
-## 📸 预览
+### 用户相关
+- `POST /api/auth/wallet` - 钱包登录/注册
+- `GET /api/user/:address` - 获取用户信息
+- `PUT /api/user/:address` - 更新用户资料
 
-深色梦幻风格界面，沉浸式解梦体验。
+### 梦境相关
+- `GET /api/dreams` - 获取梦境列表
+- `POST /api/dreams` - 发布梦境
+- `GET /api/dreams/:id/comments` - 获取评论
+- `POST /api/dreams/:id/comments` - 发表评论
+- `POST /api/dreams/:id/resonance` - 切换共鸣
+- `GET /api/dreams/:id/resonance/:address` - 检查共鸣状态
 
-## 📄 License
+## 数据库结构
+
+- `users` - 用户表（钱包地址、昵称、头像）
+- `dreams` - 梦境表（内容、标签、类型、共鸣数）
+- `comments` - 评论表
+- `resonances` - 共鸣记录表
+
+## 许可证
 
 MIT License
-
----
-
-*「你的潜意识，正在梦里写日记」*
